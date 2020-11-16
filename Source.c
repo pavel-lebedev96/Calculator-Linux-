@@ -2,11 +2,12 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <dlfcn.h>
 #define BUFSIZE 1024
 #define TABLE_OP_SIZE 4
 
 //информация об операции
-struct OperationInfo
+typedef struct
 {
 	//handle для разделяемой библиотеки
 	void* handle;
@@ -16,25 +17,26 @@ struct OperationInfo
 	char name[20];
 	//номер действия в пункте меню
 	char key;
-};
+} OperationInfo;
 
 //таблица операций
-struct TableOperations
+typedef struct
 {
 	//таблица для операций
 	OperationInfo table[TABLE_OP_SIZE];
 	//текущий размер таблицы
-	size_t size = 0;
-};
+	size_t size;
+} TableOperations;
 
 //добавление элемента op_info в таблицу operations
 bool addItemInTable(OperationInfo* op_info, TableOperations* operations)
 {
-	if (operations->size == TABLE_OP_SIZE - 1)
+	if (operations->size == TABLE_OP_SIZE)
 		return false;
-	operations->table[size + 1].funcp = op_info->funcp;
-	strcpy(p_table->table[size + 1].name, op_info->name);
-	operations->table[size + 1].key = size - '0' + 1;
+	operations->table[operations->size].handle = op_info->handle;
+	operations->table[operations->size].funcp = op_info->funcp;
+	strcpy(operations->table[operations->size].name, op_info->name);
+	operations->table[operations->size].key = operations->size + '0' + 1;
 	operations->size++;
 	return true;
 }
@@ -47,15 +49,15 @@ bool addOperation(const char* op_name, TableOperations* operations)
 
 	/*имя библиотеки в текущей директории в формате
 	"/имя библиотеки.so"*/
-	char libname[40] = "/";
-	strcat(libname, opname);
+	char libname[40] = "./";
+	strcat(libname, op_name);
 	strcat(libname, ".so");
-	
+
 	//открытие библиотеки
 	op_info.handle = dlopen(libname, RTLD_LAZY);
 	if (!op_info.handle)
 		return false;
-	
+
 	//поиск функции
 	op_info.funcp = (bool (*)
 		(const char*, const char*, char*)) dlsym(op_info.handle, op_name);
@@ -71,9 +73,18 @@ bool addOperation(const char* op_name, TableOperations* operations)
 //загрузка операций
 void load(TableOperations* operations)
 {
+	operations->size = 0;
 	char names[TABLE_OP_SIZE][20] = { "add", "substract", "multiply", "divide" };
 	for (int i = 0; i < TABLE_OP_SIZE; i++)
 		addOperation(names[i], operations);
+}
+
+//закрытие библиотек
+void close(TableOperations* operations)
+{
+	for (int i = 0; i < operations->size; i++)
+		dlclose(operations->table[i].handle);
+	operations->size = 0;
 }
 
 int main(int argc, char* argv[])
@@ -83,7 +94,7 @@ int main(int argc, char* argv[])
 	bool (*func)(const char* a_str, const char* b_str, char* res_str) = NULL;
 	bool flag;
 	TableOperations operations;
-	load(operations);
+	load(&operations);
 	if (operations.size == 0)
 	{
 		printf("There is no operations to show\n");
@@ -123,8 +134,9 @@ int main(int argc, char* argv[])
 			printf("Error!\n");
 
 		while (getchar() != EOF) {};
-		skip:;
-		
+	skip:;
+
 	} while (mode != 'q');
+	close(&operations);
 	return 0;
 }
